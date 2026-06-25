@@ -5,6 +5,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
@@ -35,6 +36,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/managementasset"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/redisqueue"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/usagedashboard"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers/claude"
@@ -354,7 +356,7 @@ func (s *Server) homeHeartbeatMiddleware() gin.HandlerFunc {
 		}
 		if c != nil && c.Request != nil {
 			path := c.Request.URL.Path
-			if strings.HasPrefix(path, "/v0/management/") || path == "/v0/management" || path == "/management.html" {
+			if strings.HasPrefix(path, "/v0/management/") || path == "/v0/management" || path == "/management.html" || path == "/usage-dashboard.html" {
 				c.Next()
 				return
 			}
@@ -383,6 +385,7 @@ func (s *Server) setupRoutes() {
 	s.engine.HEAD("/healthz", healthzHandler)
 
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
+	s.engine.GET("/usage-dashboard.html", s.serveUsageDashboardPanel)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)
@@ -613,6 +616,13 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/api-keys", s.mgmt.DeleteAPIKeys)
 		mgmt.GET("/api-key-usage", s.mgmt.GetAPIKeyUsage)
 		mgmt.GET("/usage-queue", s.mgmt.GetUsageQueue)
+		mgmt.GET("/usage-dashboard", s.mgmt.GetUsageDashboard)
+		mgmt.GET("/usage-dashboard/prices", s.mgmt.GetUsageDashboardPrices)
+		mgmt.PUT("/usage-dashboard/prices", s.mgmt.PutUsageDashboardPrices)
+		mgmt.PATCH("/usage-dashboard/prices", s.mgmt.PutUsageDashboardPrices)
+		mgmt.GET("/usage-dashboard/files", s.mgmt.GetUsageDashboardFiles)
+		mgmt.GET("/usage-dashboard/files/:name", s.mgmt.DownloadUsageDashboardFile)
+		mgmt.PUT("/usage-dashboard/files/:name", s.mgmt.UploadUsageDashboardFile)
 
 		mgmt.GET("/gemini-api-key", s.mgmt.GetGeminiKeys)
 		mgmt.PUT("/gemini-api-key", s.mgmt.PutGeminiKeys)
@@ -766,7 +776,33 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 	}
 
-	c.File(filePath)
+	data, errRead := os.ReadFile(filePath)
+	if errRead != nil {
+		log.WithError(errRead).Error("failed to read management control panel asset")
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", injectUsageDashboardEntry(data))
+}
+
+func injectUsageDashboardEntry(data []byte) []byte {
+	if len(data) == 0 || bytes.Contains(data, []byte("cpa-usage-dashboard-entry")) {
+		return data
+	}
+	html := string(data)
+	lower := strings.ToLower(html)
+	idx := strings.LastIndex(lower, "</body>")
+	if idx < 0 {
+		return data
+	}
+	entry := `<a id="cpa-usage-dashboard-entry" href="/usage-dashboard.html" target="_blank" rel="noopener" style="position:fixed;right:28px;bottom:28px;z-index:2147483647;display:flex;align-items:center;gap:8px;height:46px;padding:0 18px;border-radius:999px;background:#0f766e;color:#fff;text-decoration:none;font:700 15px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 16px 34px rgba(15,118,110,.28)">Token 用量</a>`
+	out := make([]byte, 0, len(data)+len(entry))
+	out = append(out, html[:idx]...)
+	out = append(out, entry...)
+	out = append(out, html[idx:]...)
+	return out
 }
 
 func (s *Server) enableKeepAlive(timeout time.Duration, onTimeout func()) {
@@ -1394,6 +1430,12 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 
 	if oldCfg == nil || oldCfg.RedisUsageQueueRetentionSeconds != cfg.RedisUsageQueueRetentionSeconds {
 		redisqueue.SetRetentionSeconds(cfg.RedisUsageQueueRetentionSeconds)
+	}
+
+	if oldCfg == nil || !reflect.DeepEqual(oldCfg.UsageDashboard, cfg.UsageDashboard) {
+		if errUsageDashboard := usagedashboard.Configure(cfg.UsageDashboard, cfg.AuthDir, sdkAuth.GetTokenStore()); errUsageDashboard != nil {
+			log.Warnf("usage dashboard disabled: %v", errUsageDashboard)
+		}
 	}
 
 	if s.requestLogger != nil && (oldCfg == nil || oldCfg.ErrorLogsMaxFiles != cfg.ErrorLogsMaxFiles) {

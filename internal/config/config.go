@@ -74,6 +74,9 @@ type Config struct {
 	// Default: 60. Max: 3600.
 	RedisUsageQueueRetentionSeconds int `yaml:"redis-usage-queue-retention-seconds" json:"redis-usage-queue-retention-seconds"`
 
+	// UsageDashboard controls persistent usage records and pricing summaries.
+	UsageDashboard UsageDashboardConfig `yaml:"usage-dashboard" json:"usage-dashboard"`
+
 	// DisableCooling disables quota cooldown scheduling when true.
 	DisableCooling bool `yaml:"disable-cooling" json:"disable-cooling"`
 
@@ -196,6 +199,14 @@ type PprofConfig struct {
 	Enable bool `yaml:"enable" json:"enable"`
 	// Addr is the host:port address for the pprof HTTP server.
 	Addr string `yaml:"addr" json:"addr"`
+}
+
+// UsageDashboardConfig holds persistent token usage dashboard settings.
+type UsageDashboardConfig struct {
+	// Enabled starts the persistent usage dashboard plugin.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// DataDir stores daily usage JSONL files and prices.json. On Render, point this at a Persistent Disk mount path.
+	DataDir string `yaml:"data-dir" json:"data-dir"`
 }
 
 // RemoteManagement holds management API configuration under 'remote-management'.

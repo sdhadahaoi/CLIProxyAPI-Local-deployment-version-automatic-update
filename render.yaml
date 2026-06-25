@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: cliproxyapi-plus
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: DEPLOY
+        value: render
+      - key: USAGE_DASHBOARD_ENABLED
+        value: "true"

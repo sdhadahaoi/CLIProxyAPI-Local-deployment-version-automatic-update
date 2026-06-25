@@ -71,6 +71,14 @@ usage-statistics-enabled: false
 # Default: 60. Max: 3600.
 redis-usage-queue-retention-seconds: 60
 
+# Persistent token usage dashboard. When data-dir is empty, records are stored
+# next to auth-dir. In GitStore deployments this means the usage-dashboard
+# folder is synchronized to the configured GitHub repository.
+# Environment overrides: USAGE_DASHBOARD_ENABLED=true and optional USAGE_DASHBOARD_DIR.
+usage-dashboard:
+  enabled: false
+  data-dir: ""
+
 # Proxy URL. Supports socks5/http/https protocols. Example: socks5://user:pass@192.168.1.1:1080/
 # Per-entry proxy-url also supports "direct" or "none" to bypass both the global proxy-url and environment proxies explicitly.
 proxy-url: ""
